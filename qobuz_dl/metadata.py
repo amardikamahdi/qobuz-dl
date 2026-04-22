@@ -63,6 +63,23 @@ def _format_genres(genres: list) -> str:
     return ", ".join(no_repeats)
 
 
+def _set_flac_tag(audio: FLAC, key: str, value):
+    if value is None:
+        return
+
+    if isinstance(value, bool):
+        text = "1" if value else "0"
+    elif isinstance(value, (list, tuple, set)):
+        parts = [str(item).strip() for item in value if item is not None]
+        parts = [part for part in parts if part]
+        text = "; ".join(parts)
+    else:
+        text = str(value).strip()
+
+    if text:
+        audio[key] = text
+
+
 def _embed_flac_img(root_dir, audio: FLAC):
     emb_image = os.path.join(root_dir, "cover.jpg")
     multi_emb_image = os.path.join(
@@ -128,8 +145,9 @@ def tag_flac(
 
     audio["TRACKNUMBER"] = str(d["track_number"])  # TRACK NUMBER
 
-    if "Disc " in final_name:
-        audio["DISCNUMBER"] = str(d["media_number"])
+    media_number = d.get("media_number")
+    if media_number:
+        audio["DISCNUMBER"] = str(media_number)
 
     try:
         audio["COMPOSER"] = d["composer"]["name"]  # COMPOSER
@@ -161,6 +179,80 @@ def tag_flac(
 
     if em_image:
         _embed_flac_img(root_dir, audio)
+
+    # Additional Qobuz fields for high-fidelity metadata mapping.
+    album_track_ref = d.get("album") if isinstance(d.get("album"), dict) else {}
+    album_id = album_track_ref.get("id") or album.get("id")
+    release_date_original = d.get("release_date_original") or album.get(
+        "release_date_original"
+    )
+    release_date_download = d.get("release_date_download") or album.get(
+        "release_date_download"
+    )
+    release_date_stream = d.get("release_date_stream") or album.get(
+        "release_date_stream"
+    )
+
+    _set_flac_tag(audio, "ISRC", d.get("isrc"))
+    _set_flac_tag(audio, "BARCODE", album.get("upc"))
+    _set_flac_tag(audio, "UPC", album.get("upc"))
+    _set_flac_tag(audio, "DISCTOTAL", album.get("media_count"))
+    _set_flac_tag(audio, "TOTALDISCS", album.get("media_count"))
+    _set_flac_tag(audio, "QOBUZ_TRACK_ID", d.get("id"))
+    _set_flac_tag(audio, "QOBUZ_ALBUM_ID", album_id)
+    _set_flac_tag(audio, "QOBUZ_ID", album.get("qobuz_id"))
+    _set_flac_tag(audio, "RELEASETYPE", album.get("release_type"))
+    _set_flac_tag(audio, "SUBTITLE", album.get("subtitle"))
+    _set_flac_tag(audio, "DESCRIPTION", album.get("description"))
+    _set_flac_tag(audio, "DESCRIPTION_LANGUAGE", album.get("description_language"))
+    _set_flac_tag(audio, "ALBUMCOMPOSER", (album.get("composer") or {}).get("name"))
+    _set_flac_tag(audio, "PERFORMERS", d.get("performers"))
+    _set_flac_tag(audio, "WORK", d.get("work"))
+    _set_flac_tag(audio, "VERSION", d.get("version"))
+    _set_flac_tag(audio, "DURATION", d.get("duration"))
+    _set_flac_tag(
+        audio,
+        "PARENTAL_WARNING",
+        d.get("parental_warning", album.get("parental_warning")),
+    )
+    _set_flac_tag(audio, "ORIGINALDATE", release_date_original)
+    _set_flac_tag(audio, "RELEASEDATE_DOWNLOAD", release_date_download)
+    _set_flac_tag(audio, "RELEASEDATE_STREAM", release_date_stream)
+    _set_flac_tag(audio, "YEAR", (release_date_original or "")[:4])
+    _set_flac_tag(audio, "URL", album.get("url"))
+    _set_flac_tag(audio, "PRODUCT_URL", album.get("product_url"))
+    _set_flac_tag(
+        audio,
+        "BIT_DEPTH",
+        d.get("maximum_bit_depth") or album.get("maximum_bit_depth"),
+    )
+    _set_flac_tag(
+        audio,
+        "SAMPLING_RATE",
+        d.get("maximum_sampling_rate") or album.get("maximum_sampling_rate"),
+    )
+    _set_flac_tag(
+        audio,
+        "CHANNELS",
+        d.get("maximum_channel_count") or album.get("maximum_channel_count"),
+    )
+
+    audio_info = d.get("audio_info") if isinstance(d.get("audio_info"), dict) else {}
+    replaygain_track_gain = audio_info.get("replaygain_track_gain")
+    if replaygain_track_gain is not None:
+        try:
+            replaygain_track_gain = f"{float(replaygain_track_gain):+.2f} dB"
+        except (TypeError, ValueError):
+            pass
+    _set_flac_tag(audio, "REPLAYGAIN_TRACK_GAIN", replaygain_track_gain)
+
+    replaygain_track_peak = audio_info.get("replaygain_track_peak")
+    if replaygain_track_peak is not None:
+        try:
+            replaygain_track_peak = f"{float(replaygain_track_peak):.6f}"
+        except (TypeError, ValueError):
+            pass
+    _set_flac_tag(audio, "REPLAYGAIN_TRACK_PEAK", replaygain_track_peak)
 
     audio.save()
     os.rename(filename, final_name)

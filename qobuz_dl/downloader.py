@@ -952,15 +952,10 @@ class Download:
             return "skipped"
 
         final_root_dir = root_dir
-        if multiple:
-            final_root_dir = os.path.join(root_dir, f"Disc {multiple}")
-            os.makedirs(final_root_dir, exist_ok=True)
+        os.makedirs(final_root_dir, exist_ok=True)
 
         if work_root_base:
-            work_root_dir = (
-                os.path.join(work_root_base, f"Disc {multiple}")
-                if multiple else work_root_base
-            )
+            work_root_dir = work_root_base
             os.makedirs(work_root_dir, exist_ok=True)
             using_staging = os.path.abspath(work_root_dir) != os.path.abspath(
                 final_root_dir
@@ -978,6 +973,10 @@ class Download:
         # track_format is a format string
         # e.g. '{tracknumber}. {artist} - {tracktitle}'
         formatted_path = sanitize_filename(self.track_format.format(**filename_attr))
+
+        if multiple:
+            formatted_path = sanitize_filename(f"Disc {multiple} - {formatted_path}")
+
         final_file = os.path.join(final_root_dir, formatted_path)[:250] + extension
         staged_final_file = (
             os.path.join(work_root_dir, formatted_path)[:250] + extension
